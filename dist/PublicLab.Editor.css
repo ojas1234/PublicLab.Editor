@@ -100,6 +100,10 @@
   min-height: 31px;
 }
 
+.ple-history {
+  overflow: scroll;
+}
+
 .ple-textarea,
 .ple-textarea:focus,
 .wk-wysiwyg {
@@ -111,6 +115,11 @@
   -moz-border-radius:    8px;
   border-radius:         8px;
   outline: none;
+}
+
+.ple-textarea img,
+.wk-wysiwyg img{
+  max-width: 100%
 }
 
 .wk-commands {
@@ -127,9 +136,9 @@
   background: #eee;
 }
 
-.ple-history {
-  height: 75%;
-  overflow: scroll;
+.wk-prompt {
+  border-radius: 10px;
+  padding: 20px;
 }
 
 /* Following may be removed if this is resolved:

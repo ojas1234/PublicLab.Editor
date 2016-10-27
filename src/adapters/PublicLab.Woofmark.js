@@ -24,18 +24,18 @@ module.exports = function(textarea, _editor, _module) {
   }
 
 
-  _module.options.tags = _module.options.tags || function(value, done) {
-    done([
+  _module.options.tags = _module.options.tags || function(data, done) {
+    done(null, [{ list: [
       '#spectrometer', 
       '#air-quality', 
       '#water-quality', 
       '#balloon-mapping' 
-    ]);
+    ]}]);
   }
 
 
-  _module.options.authors = _module.options.authors || function(value, done) {
-    done([
+  _module.options.authors = _module.options.authors || function(data, done) {
+    done(null, [{ list: [
       { value: '@hodor',  text: '@hodor; 1 note'   },
       { value: '@sansa',  text: '@sansa; 2 notes'  },
       { value: '@john',   text: '@john; 4 notes'   },
@@ -43,16 +43,14 @@ module.exports = function(textarea, _editor, _module) {
       { value: '@rickon', text: '@rickon; 5 notes' },
       { value: '@bran',   text: '@bran; 1 note'    },
       { value: '@arya',   text: '@arya; 2 notes'   }
-    ]);
+    ]}]);
   }
 
 
   var wysiwyg = woofmark(textarea, {
 
     defaultMode: 'wysiwyg',
-    fencing:     true,
     storage:     'ple-woofmark-mode',
-    xhr:         require('xhr'),
 
     render: {
 
@@ -84,10 +82,18 @@ module.exports = function(textarea, _editor, _module) {
  
       // optional text describing the kind of files that can be uploaded
       restriction: 'GIF, JPG, and PNG images',
- 
-      // what to call the FormData field?
-      key: 'image[photo]',
- 
+
+      // image field key
+      fieldKey: 'image[photo]',
+
+      // additional form fields
+      formData: { nid: null },
+
+      // xhr upload options like CSRF token
+      xhrOptions: { 
+        beforeSend: function(xhr) { xhr.setRequestHeader('X-CSRF-Token', $('meta[name="csrf-token"]').attr('content')) }
+      },
+
       // should return whether `e.dataTransfer.files[i]` is valid, defaults to a `true` operation
       validate: function isItAnImageFile (file) {
         return /^image\/(gif|png|p?jpe?g)$/i.test(file.type);
@@ -99,6 +105,35 @@ module.exports = function(textarea, _editor, _module) {
     // for handling non-image uploads
     // -- need to insert icon, maybe, or do it in CSS
     attachments: {
+
+      method: 'POST',
+ 
+      // endpoint where the images will be uploaded to, required
+      url: '/images',
+ 
+      // optional text describing the kind of files that can be uploaded
+      restriction: 'Not all filetypes are accepted; please email web@publiclab.org if yours does not work.',
+
+      // image field key
+      fieldKey: 'image[photo]',
+
+      // additional form fields
+      formData: { nid: null },
+
+      // xhr upload options like CSRF token
+      xhrOptions: { 
+        beforeSend: function(xhr) { xhr.setRequestHeader('X-CSRF-Token', $('meta[name="csrf-token"]').attr('content')) }
+      },
+
+      // should return whether `e.dataTransfer.files[i]` is valid, defaults to a `true` operation
+      validate: function isItAnUploadableFile (file) {
+        var valid = true,
+            formats = _module.options.formats || ['csv', 'xls', 'zip', 'kml', 'kmz', 'gpx', 'lut', 'stl', 'dxf', 'txt'],
+            filetype = file.name.split('.')[file.name.split('.').length - 1];
+        if (formats.indexOf(filetype) === -1) valid = false;
+        return valid;
+      }
+
     },
 
 
@@ -155,82 +190,106 @@ module.exports = function(textarea, _editor, _module) {
   });
 
 
-  //wysiwyg.calloutHorse = horsey(textarea, {
-  wysiwyg.calloutHorse = horsey(wysiwyg.editable, {
-    anchor: '@',
-    suggestions: _module.options.authors,
-    set: function (value) {
+  // allow toggling off:
+  if (_module.options.authorsAutocomplete !== false) {
+
+    wysiwyg.calloutHorse = horsey(wysiwyg.editable, {
+      anchor: '@',
+      source: _module.options.authors,
+      getText: 'text',
+      getValue: 'value'
+    });
+ 
+    wysiwyg.calloutHorse.defaultSetter = function (value) {
       if (wysiwyg.mode === 'wysiwyg') {
         textarea.innerHTML = value;
       } else {
         textarea.value = value;
       }
     }
-  });
+ 
+    wysiwyg.calloutBridge = banksy(textarea, {
+      editor: wysiwyg,
+      horse: wysiwyg.calloutHorse
+    });
 
-  wysiwyg.calloutBridge = banksy(textarea, {
-    editor: wysiwyg,
-    horse: wysiwyg.calloutHorse
-  });
+  }
 
+  if (_module.options.tagsAutocomplete !== false) {
 
-  wysiwyg.tagHorse = horsey(textarea, {
-    anchor: '#',
-    suggestions: _module.options.tags,
-    set: function (value) {
+    wysiwyg.tagHorse = horsey(textarea, {
+      anchor: '#',
+      source: _module.options.tags
+    });
+ 
+    wysiwyg.tagHorse.defaultSetter = function (value) {
       el.value = value + ', ';
     }
-  });
+ 
+    wysiwyg.tagBridge = banksy(textarea, {
+      editor: wysiwyg,
+      horse: wysiwyg.tagHorse
+    });
 
-  wysiwyg.tagBridge = banksy(textarea, {
-    editor: wysiwyg,
-    horse: wysiwyg.tagHorse
-  });
+  }
 
 
   // set up table generation tools:
   require('../modules/PublicLab.RichTextModule.Table.js')(_module, wysiwyg);
 
 
-  // styling: 
+  wysiwyg.stylePrompt = function() {
+    $('.wk-prompt button, span.wk-prompt-browse').addClass('btn btn-default');
+    $('.wk-prompt input').addClass('input form-control')
+                         .css('margin-bottom','5px');
+  }
 
-  $('.wk-commands').after('&nbsp; <span style="color:#888;display:none;" class="ple-history-saving btn"><i class="fa fa-clock-o"></i> <span class="hidden-xs">Saving...</span></span>');
-  $('.wk-commands, .wk-switchboard').addClass('btn-group');
-  $('.wk-commands button, .wk-switchboard button').addClass('btn btn-default');
+  $('.wk-commands button.woofmark-command-attachment, .wk-commands button.woofmark-command-image').click(wysiwyg.stylePrompt);
 
-  $('.wk-commands button.woofmark-command-quote').addClass('hidden-xs');
-  $('.wk-commands button.woofmark-command-code').addClass('hidden-xs');
-  $('.wk-commands button.woofmark-command-ol').addClass('hidden-xs');
-  $('.wk-commands button.woofmark-command-attachment').addClass('hidden-xs');
 
-  $('.wk-switchboard button.woofmark-mode-markdown').parent().removeClass('btn-group');
-  $('.wk-switchboard button.woofmark-mode-markdown').html('<span class="visible-xs">#</span><span class="hidden-xs">Markdown</span>');
-  $('.wk-switchboard button.woofmark-mode-wysiwyg').html('<span class="visible-xs">Aa</span><span class="hidden-xs">Rich</span>');
+  wysiwyg.style = function() {
 
-  if (wysiwyg.mode === 'wysiwyg') $('.wk-switchboard button.woofmark-mode-wysiwyg').hide();
-  else                            $('.wk-switchboard button.woofmark-mode-markdown').hide();
-
-  $('.wk-switchboard button').click(function() {
-    $('.wk-switchboard button.woofmark-mode-markdown').toggle();
-    $('.wk-switchboard button.woofmark-mode-wysiwyg').toggle();
-  });
-
-  if (_editor.options.size == "xs") {
-
-    //$('.wk-switchboard button,.wk-commands button').addClass('btn-xs');
-
-    // hide selectively, not by #:
-    $('.wk-commands button.woofmark-command-quote').hide();
-    $('.wk-commands button.woofmark-command-code').hide();
-    $('.wk-commands button.woofmark-command-ol').hide();
-    $('.wk-commands button.woofmark-command-ul').hide();
-
-  } else {
-
-    $('.wk-switchboard button').addClass('btn-sm');
+    $('.wk-commands').after('&nbsp; <span style="color:#888;display:none;" class="ple-history-saving btn"><i class="fa fa-clock-o"></i> <span class="hidden-xs">Saving...</span></span>');
+    $('.wk-commands, .wk-switchboard').addClass('btn-group');
+    $('.wk-commands button, .wk-switchboard button').addClass('btn btn-default');
+ 
+    $('.wk-commands button.woofmark-command-quote').addClass('hidden-xs');
+    $('.wk-commands button.woofmark-command-code').addClass('hidden-xs');
+    $('.wk-commands button.woofmark-command-ol').addClass('hidden-xs');
+    $('.wk-commands button.woofmark-command-attachment').addClass('hidden-xs');
+ 
+    $('.wk-switchboard button.woofmark-mode-markdown').parent().removeClass('btn-group');
+    $('.wk-switchboard button.woofmark-mode-markdown').html('<span class="visible-xs">#</span><span class="hidden-xs">Markdown</span>');
+    $('.wk-switchboard button.woofmark-mode-wysiwyg').html('<span class="visible-xs">Aa</span><span class="hidden-xs">Rich</span>');
+ 
+    if (wysiwyg.mode === 'wysiwyg') $('.wk-switchboard button.woofmark-mode-wysiwyg').hide();
+    else                            $('.wk-switchboard button.woofmark-mode-markdown').hide();
+ 
+    $('.wk-switchboard button').click(function() {
+      $('.wk-switchboard button.woofmark-mode-markdown').toggle();
+      $('.wk-switchboard button.woofmark-mode-wysiwyg').toggle();
+    });
+ 
+    if (_editor.options.size == "xs") {
+ 
+      //$('.wk-switchboard button,.wk-commands button').addClass('btn-xs');
+ 
+      // hide selectively, not by #:
+      $('.wk-commands button.woofmark-command-quote').hide();
+      $('.wk-commands button.woofmark-command-code').hide();
+      $('.wk-commands button.woofmark-command-ol').hide();
+      $('.wk-commands button.woofmark-command-ul').hide();
+ 
+    } else {
+ 
+      $('.wk-switchboard button').addClass('btn-sm');
+ 
+    }
 
   }
 
+
+  wysiwyg.style();
 
   return wysiwyg;
 
